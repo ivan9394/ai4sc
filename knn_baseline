@@ -1,0 +1,45 @@
+import numpy as np  # 数值计算库
+import pandas as pd  # 数据处理库
+
+from rdkit import Chem  # 分子对象转换
+from rdkit import DataStructs  #DataStructs.BulkTanimotoSimilarity
+from rdkit.Chem.rdMolDescriptors import GetMorganFingerprintAsBitVect  # 位向量转换
+from sklearn.metrics import fbeta_score  # F2 Score 计算
+
+
+
+def smile2fingerprint(smile: str):
+    """将 SMILE 分子式表示为指纹数据
+
+    参数:
+        smile (string): SMILE 分子式
+
+    返回:
+        fp (Explict BitVect): 分子式的 Morgan 指纹位向量
+    """
+    molecular = Chem.MolFromSmiles(smile)  # 将字符串转换为分子式对象
+    finger_print = GetMorganFingerprintAsBitVect(molecular, 5, nBits=1024)  # 获得分子式的 Morgan 指纹位向量
+    return finger_print
+
+def fp_knn(all_m, raw_data, k):
+    list_labels = []
+    for i in range(raw_data.shape[0]):
+        sorted_list = sorted(all_m[i])[-k:]
+        indices = [all_m[i].index(value) for value in sorted_list if value != 1]
+        list_labels.append(raw_data.iloc[indices, 1].mean())
+    return list_labels
+
+DATA_PATH = "../data"  # 数据路径
+
+raw_data = pd.read_csv(f"{DATA_PATH}/mol_train.csv")  # 读入训练数据
+test_data = pd.read_csv(f"{DATA_PATH}/mol_test.csv")  # 读入测试数据
+
+raw_data_smiles = [smile2fingerprint(smile) for smile in raw_data["SMILES"]]
+all_m = list()
+for i in range(len(raw_data_smiles)):
+    s = DataStructs.BulkTanimotoSimilarity(raw_data_smiles[i],raw_data_smiles[:])
+    all_m.append(s)
+
+raw_data['knn_prob'] = fp_knn(all_m, raw_data, 9)
+raw_data['target_pred'] = raw_data['knn_prob'].apply(lambda x: 1 if x > 0.5 else 0)
+fbeta_score(raw_data['target_pred'], raw_data['target_cns'], beta = 2)
